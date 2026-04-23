@@ -18,7 +18,11 @@ def index():
 def create_scan():
     data = request.get_json(silent=True) or {}
     target = (data.get("target") or "").strip()
-    top_ports = int(data.get("top_ports", 1000))
+    try:
+        top_ports = int(data.get("top_ports", 1000))
+    except (TypeError, ValueError):
+        return jsonify({"error": "top_ports must be a valid integer."}), 400
+
     if not target:
         return jsonify({"error": "Target is required."}), 400
 
