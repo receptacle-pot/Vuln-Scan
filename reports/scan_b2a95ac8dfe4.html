@@ -1,0 +1,38 @@
+
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>Scan Report b2a95ac8dfe4</title>
+<style>
+body{font-family:Arial,sans-serif;margin:32px;background:#f4f7fb;color:#1d2a44}
+.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid #d9e1f2;padding:8px;text-align:left}
+th{background:#ecf2ff}pre{white-space:pre-wrap;background:#0b1220;color:#d7e3ff;padding:12px;border-radius:8px}
+</style>
+</head>
+<body>
+<h1>Vulnerability Assessment Report</h1>
+<div class='card'>
+<p><b>Target:</b> 127.0.0.1</p>
+<p><b>Generated At:</b> 2026-04-23 15:48:33 UTC</p>
+<p><b>Nmap Command:</b> internal_socket_scan</p>
+<p><b>Overall Risk:</b> Low</p>
+<p><b>Engine:</b> socket_fallback</p>
+<p><b>Counts:</b> Critical=0, High=1, Medium=0, Low=0</p>
+</div>
+<div class='card'><h2>Open Ports</h2><ul><li>135/tcp - MSRPC</li><li>445/tcp - SMB</li><li>902/tcp - UNKNOWN</li><li>912/tcp - UNKNOWN</li></ul></div>
+<div class='card'>
+<h2>Vulnerabilities & Fixes</h2>
+<table>
+<tr><th>Port</th><th>Service</th><th>Severity</th><th>Description</th><th>Recommendation</th></tr>
+<tr><td>135</td><td>MSRPC</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual validation and version-based CVE checks.</td></tr>
+<tr><td>445</td><td>SMB</td><td>High</td><td>SMB may expose shares and legacy protocol vulnerabilities.</td><td>Disable SMBv1, patch regularly, restrict shares.</td></tr>
+<tr><td>902</td><td>UNKNOWN</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual validation and version-based CVE checks.</td></tr>
+<tr><td>912</td><td>UNKNOWN</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual validation and version-based CVE checks.</td></tr>
+</table>
+</div>
+<div class='card'><h2>Warnings</h2><ul><li>Nmap binary was not available on server.</li></ul><p><b>Error:</b> None</p></div>
+<div class='card'><h2>Nmap Raw Output</h2><pre>Nmap not installed. Used internal TCP socket scan fallback.</pre></div>
+</body>
+</html>

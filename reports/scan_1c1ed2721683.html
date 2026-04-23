@@ -1,0 +1,46 @@
+
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>Scan Report 1c1ed2721683</title>
+<style>
+body{font-family:Arial,sans-serif;margin:32px;background:#f4f7fb;color:#1d2a44}
+.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid #d9e1f2;padding:8px;text-align:left}
+th{background:#ecf2ff}pre{white-space:pre-wrap;background:#0b1220;color:#d7e3ff;padding:12px;border-radius:8px}
+</style>
+</head>
+<body>
+<h1>Vulnerability Assessment Report</h1>
+<div class='card'>
+<p><b>Target:</b> 192.168.142.130</p>
+<p><b>Generated At:</b> 2026-04-23 15:48:56 UTC</p>
+<p><b>Nmap Command:</b> internal_socket_scan</p>
+<p><b>Overall Risk:</b> Critical</p>
+<p><b>Engine:</b> socket_fallback</p>
+<p><b>Counts:</b> Critical=1, High=4, Medium=3, Low=1</p>
+</div>
+<div class='card'><h2>Open Ports</h2><ul><li>21/tcp - FTP</li><li>22/tcp - SSH</li><li>23/tcp - Telnet</li><li>25/tcp - SMTP</li><li>53/tcp - DNS</li><li>80/tcp - HTTP</li><li>111/tcp - RPCbind</li><li>139/tcp - NetBIOS</li><li>445/tcp - SMB</li><li>512/tcp - UNKNOWN</li><li>513/tcp - UNKNOWN</li><li>514/tcp - UNKNOWN</li></ul></div>
+<div class='card'>
+<h2>Vulnerabilities & Fixes</h2>
+<table>
+<tr><th>Port</th><th>Service</th><th>Severity</th><th>Description</th><th>Recommendation</th></tr>
+<tr><td>21</td><td>FTP</td><td>High</td><td>Unencrypted file transfer can expose credentials.</td><td>Disable FTP or migrate to SFTP/FTPS.</td></tr>
+<tr><td>22</td><td>SSH</td><td>Low</td><td>SSH can be brute-forced if internet-exposed.</td><td>Disable password auth; use keys + fail2ban.</td></tr>
+<tr><td>23</td><td>Telnet</td><td>Critical</td><td>Telnet sends plaintext credentials and sessions.</td><td>Disable Telnet; replace with SSH.</td></tr>
+<tr><td>25</td><td>SMTP</td><td>Medium</td><td>Mail services may allow spoofing or open relay if weakly configured.</td><td>Restrict relay policies and patch MTA.</td></tr>
+<tr><td>53</td><td>DNS</td><td>Medium</td><td>DNS can be abused for amplification or zone leakage.</td><td>Disable open recursion and restrict zone transfers.</td></tr>
+<tr><td>80</td><td>HTTP</td><td>Medium</td><td>Web service may expose vulnerable apps or default pages.</td><td>Patch stack, harden headers, and review auth controls.</td></tr>
+<tr><td>111</td><td>RPCbind</td><td>High</td><td>RPC services can expose internal service mapping.</td><td>Restrict RPC to trusted networks and firewall aggressively.</td></tr>
+<tr><td>139</td><td>NetBIOS</td><td>High</td><td>Legacy NetBIOS may leak host/share info.</td><td>Disable where possible and restrict SMB/NetBIOS access.</td></tr>
+<tr><td>445</td><td>SMB</td><td>High</td><td>SMB may expose shares and legacy protocol vulnerabilities.</td><td>Disable SMBv1, patch regularly, restrict shares.</td></tr>
+<tr><td>512</td><td>UNKNOWN</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual validation and version-based CVE checks.</td></tr>
+<tr><td>513</td><td>UNKNOWN</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual validation and version-based CVE checks.</td></tr>
+<tr><td>514</td><td>UNKNOWN</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual validation and version-based CVE checks.</td></tr>
+</table>
+</div>
+<div class='card'><h2>Warnings</h2><ul><li>Nmap binary was not available on server.</li></ul><p><b>Error:</b> None</p></div>
+<div class='card'><h2>Nmap Raw Output</h2><pre>Nmap not installed. Used internal TCP socket scan fallback.</pre></div>
+</body>
+</html>
