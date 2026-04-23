@@ -1,0 +1,40 @@
+
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>Scan Report 4eb9014c9177</title>
+<style>
+body{font-family:Arial,sans-serif;margin:32px;background:#f4f7fb;color:#1d2a44}
+.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid #d9e1f2;padding:8px;text-align:left}
+th{background:#ecf2ff}
+</style>
+</head>
+<body>
+<h1>Vulnerability Assessment Report</h1>
+<div class='card'>
+<p><b>Target:</b> 192.168.142.1</p>
+<p><b>Generated at:</b> 2026-04-23 12:41:31 UTC</p>
+<p><b>Overall Risk:</b> Low</p>
+<p><b>Risk Counts:</b> Critical=0, High=1, Medium=0, Low=0</p>
+</div>
+<div class='card'>
+<h2>Open Ports</h2>
+<ul>
+<li>135 - MSRPC</li><li>139 - NetBIOS</li><li>445 - SMB</li><li>902 - Unknown</li><li>912 - Unknown</li>
+</ul>
+</div>
+<div class='card'>
+<h2>Vulnerabilities & Recommendations</h2>
+<table>
+<tr><th>Port</th><th>Service</th><th>Severity</th><th>Description</th><th>Recommendation</th></tr>
+<tr><td>135</td><td>MSRPC</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual verification and service fingerprinting.</td></tr>
+<tr><td>139</td><td>NetBIOS</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual verification and service fingerprinting.</td></tr>
+<tr><td>445</td><td>SMB</td><td>High</td><td>SMB can expose file shares and legacy vulnerabilities.</td><td>Restrict SMB, patch OS, disable SMBv1.</td></tr>
+<tr><td>902</td><td>Unknown</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual verification and service fingerprinting.</td></tr>
+<tr><td>912</td><td>Unknown</td><td>Info</td><td>No mapped issue in local knowledge base.</td><td>Perform manual verification and service fingerprinting.</td></tr>
+</table>
+</div>
+</body>
+</html>
