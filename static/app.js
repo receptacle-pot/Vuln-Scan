@@ -33,8 +33,11 @@ function renderSummary(result) {
   document.getElementById('summaryCards').innerHTML = `
     <div class="alert alert-dark"><b>Overall Risk:</b> ${result.risk_summary.overall}</div>
     <div class="alert alert-secondary"><b>Weighted Score:</b> ${result.risk_summary.weighted_score}</div>
-    <div class="alert alert-info mb-0"><b>Hosts discovered:</b> ${result.hosts_discovered.length}</div>
+    <div class="alert alert-info"><b>Hosts discovered:</b> ${result.hosts_discovered.length}</div>
+    <div class="alert alert-light mb-0"><b>Nmap Command:</b> <code>${result.nmap_command}</code></div>
   `;
+
+  document.getElementById('nmapRaw').textContent = result.nmap_raw_output || '';
 
   const body = document.getElementById('vulnTableBody');
   body.innerHTML = '';
@@ -57,6 +60,9 @@ document.getElementById('scanBtn').addEventListener('click', async () => {
   document.getElementById('logs').innerHTML = '';
   setProgress(0);
   document.getElementById('reportLink').classList.add('disabled');
+  document.getElementById('nmapRaw').textContent = '';
+  document.getElementById('summaryCards').innerHTML = '';
+  document.getElementById('vulnTableBody').innerHTML = '';
 
   const create = await fetch('/api/scan', {
     method: 'POST',

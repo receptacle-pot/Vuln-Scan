@@ -2,7 +2,9 @@ import html
 import ipaddress
 import json
 import queue
+import re
 import socket
+import subprocess
 import threading
 import time
 import uuid
@@ -32,20 +34,24 @@ COMMON_SERVICES = {
     5432: "PostgreSQL",
     5900: "VNC",
     6379: "Redis",
-    8080: "HTTP-Alt",
+    8009: "AJP13",
+    8180: "HTTP-Alt",
 }
 
 VULN_KB = {
     "FTP": ("High", "Unencrypted file transfer can expose credentials.", "Disable FTP or migrate to SFTP/FTPS."),
-    "Telnet": ("Critical", "Telnet sends plaintext credentials and sessions.", "Disable Telnet; use SSH with key-based auth."),
-    "SMB": ("High", "SMB can expose file shares and legacy vulnerabilities.", "Restrict SMB, patch OS, disable SMBv1."),
-    "RDP": ("High", "Remote desktop exposed to network brute force and exploits.", "Use VPN, enable MFA, restrict source IPs."),
-    "Redis": ("Critical", "Unauthenticated Redis may allow remote code execution.", "Bind to localhost, require auth, firewall port 6379."),
-    "MySQL": ("Medium", "Database service exposure may leak data if misconfigured.", "Restrict network access and rotate credentials."),
-    "PostgreSQL": ("Medium", "Database exposed to unnecessary network segments.", "Limit listen addresses and enforce strong auth."),
-    "HTTP": ("Medium", "Web service may be vulnerable without hardening.", "Patch web stack, enforce secure headers, run WAF."),
-    "HTTPS": ("Low", "TLS service still needs cert and config hygiene.", "Use modern TLS versions/ciphers and renew certificates."),
-    "SSH": ("Low", "SSH can be brute-forced if internet-exposed.", "Disable password auth; enable keys + fail2ban."),
+    "SSH": ("Low", "SSH can be brute-forced if internet-exposed.", "Disable password auth; use keys + fail2ban."),
+    "Telnet": ("Critical", "Telnet sends plaintext credentials and sessions.", "Disable Telnet; replace with SSH."),
+    "SMTP": ("Medium", "Mail services may allow spoofing or open relay if weakly configured.", "Restrict relay policies and patch MTA."),
+    "DNS": ("Medium", "DNS can be abused for amplification or zone leakage.", "Disable open recursion and restrict zone transfers."),
+    "HTTP": ("Medium", "Web service may expose vulnerable apps or default pages.", "Patch stack, harden headers, and review auth controls."),
+    "RPCbind": ("High", "RPC services can expose internal service mapping.", "Restrict RPC to trusted networks and firewall aggressively."),
+    "NetBIOS": ("High", "Legacy NetBIOS may leak host/share info.", "Disable where possible and restrict SMB/NetBIOS access."),
+    "SMB": ("High", "SMB may expose shares and legacy protocol vulnerabilities.", "Disable SMBv1, patch regularly, restrict shares."),
+    "MySQL": ("Medium", "Database service exposure increases attack surface.", "Bind to internal interfaces and enforce strong credentials."),
+    "PostgreSQL": ("Medium", "Database exposed beyond required segments.", "Restrict listen addresses and enforce TLS/auth."),
+    "VNC": ("High", "VNC is often weakly protected and remotely exploitable.", "Place behind VPN, strong auth, and network ACLs."),
+    "AJP13": ("High", "AJP connectors may expose backend app containers.", "Disable unused AJP or enforce secrets and ACLs."),
 }
 
 SEVERITY_SCORE = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Info": 0}
@@ -68,7 +74,7 @@ class ScanManager:
         self.reports_dir = reports_dir
         self.scans: Dict[str, ScanState] = {}
 
-    def create_scan(self, target: str, top_ports: int = 1024) -> str:
+    def create_scan(self, target: str, top_ports: int = 1000) -> str:
         target_ip = self._validate_and_resolve_target(target)
         top_ports = max(1, min(top_ports, 3000))
         scan_id = uuid.uuid4().hex[:12]
@@ -114,19 +120,26 @@ class ScanManager:
         state = self.scans[scan_id]
         try:
             state.status = "running"
-            self._emit(state, "info", f"Starting scan on {state.target}")
-            open_ports = self._scan_ports(state)
-            hosts = self._network_discovery(state.target)
+            self._emit(state, "info", f"Running Nmap scan on {state.target} (top {state.top_ports} ports)")
+            nmap_result = self._run_nmap_scan(state)
+            state.progress = 78
+            self._emit(state, "info", f"Nmap found {len(nmap_result['open_ports'])} open ports.")
 
-            vulnerabilities = self._assess_vulnerabilities(open_ports)
+            self._emit(state, "info", "Running lightweight neighborhood discovery in /24 subnet...")
+            hosts = self._network_discovery(state.target)
+            state.progress = 90
+
+            vulnerabilities = self._assess_vulnerabilities(nmap_result["open_ports"])
             risk_summary = self._risk_summary(vulnerabilities)
 
             state.result = {
-                "open_ports": open_ports,
+                "open_ports": nmap_result["open_ports"],
                 "hosts_discovered": hosts,
                 "vulnerabilities": vulnerabilities,
                 "risk_summary": risk_summary,
                 "solutions": self._solution_list(vulnerabilities),
+                "nmap_command": nmap_result["command"],
+                "nmap_raw_output": nmap_result["raw_output"],
                 "generated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
             }
             self._generate_html_report(scan_id, state)
@@ -138,53 +151,49 @@ class ScanManager:
             state.status = "failed"
             self._emit(state, "error", f"Scan failed: {exc}")
 
-    def _scan_ports(self, state: ScanState) -> List[Dict]:
-        ports = list(range(1, state.top_ports + 1))
+    def _run_nmap_scan(self, state: ScanState) -> Dict:
+        command = ["nmap", "-Pn", f"--top-ports", str(state.top_ports), state.target]
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=180, check=False)
+        raw_output = completed.stdout.strip() or completed.stderr.strip()
+        if completed.returncode != 0:
+            raise RuntimeError(raw_output or "Nmap command failed.")
+
         open_ports = []
+        for line in raw_output.splitlines():
+            line = line.strip()
+            match = re.match(r"^(\d+)/tcp\s+open\s+([\w\-\?]+)", line)
+            if not match:
+                continue
+            port = int(match.group(1))
+            service_raw = match.group(2)
+            service = COMMON_SERVICES.get(port, service_raw.upper())
+            open_ports.append({"port": port, "service": service, "state": "open"})
+            self._emit(state, "port", f"{port}/tcp open ({service_raw})")
+            state.progress = min(70, state.progress + 2)
 
-        with ThreadPoolExecutor(max_workers=200) as executor:
-            futures = {executor.submit(self._check_port, state.target, port): port for port in ports}
-            total = len(futures)
-            for idx, fut in enumerate(as_completed(futures), start=1):
-                record = fut.result()
-                if record:
-                    open_ports.append(record)
-                    self._emit(state, "port", f"Port {record['port']} open ({record['service']})")
-
-                if idx % 50 == 0 or idx == total:
-                    pct = int((idx / total) * 70)
-                    state.progress = max(state.progress, pct)
-
-        state.progress = max(state.progress, 75)
-        self._emit(state, "info", f"Port scan complete. {len(open_ports)} open ports found.")
-        return sorted(open_ports, key=lambda x: x["port"])
+        return {
+            "open_ports": sorted(open_ports, key=lambda x: x["port"]),
+            "raw_output": raw_output,
+            "command": " ".join(command),
+        }
 
     def _network_discovery(self, target_ip: str) -> List[str]:
         net = ipaddress.ip_network(f"{target_ip}/24", strict=False)
         neighbors = []
-        for host in list(net.hosts())[:25]:
-            ip = str(host)
-            if self._is_host_reachable(ip):
-                neighbors.append(ip)
-        return neighbors
-
-    @staticmethod
-    def _check_port(target: str, port: int):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(0.2)
-        try:
-            if sock.connect_ex((target, port)) == 0:
-                service = COMMON_SERVICES.get(port, "Unknown")
-                return {"port": port, "service": service, "state": "open"}
-        finally:
-            sock.close()
-        return None
+        hosts = list(net.hosts())[:64]
+        with ThreadPoolExecutor(max_workers=64) as executor:
+            futures = {executor.submit(self._is_host_reachable, str(host)): str(host) for host in hosts}
+            for fut in as_completed(futures):
+                ip = futures[fut]
+                if fut.result():
+                    neighbors.append(ip)
+        return sorted(neighbors)
 
     @staticmethod
     def _is_host_reachable(ip: str) -> bool:
         for port in (80, 443, 22):
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.05)
+            sock.settimeout(0.08)
             try:
                 if sock.connect_ex((ip, port)) == 0:
                     return True
@@ -198,7 +207,7 @@ class ScanManager:
             service = item["service"]
             severity, description, recommendation = VULN_KB.get(
                 service,
-                ("Info", "No mapped issue in local knowledge base.", "Perform manual verification and service fingerprinting."),
+                ("Info", "No mapped issue in local knowledge base.", "Perform manual validation and version-based CVE checks."),
             )
             findings.append(
                 {
@@ -214,13 +223,7 @@ class ScanManager:
 
     @staticmethod
     def _cvss_estimate(severity: str) -> float:
-        return {
-            "Critical": 9.3,
-            "High": 8.0,
-            "Medium": 5.6,
-            "Low": 3.2,
-            "Info": 0.0,
-        }[severity]
+        return {"Critical": 9.3, "High": 8.0, "Medium": 5.6, "Low": 3.2, "Info": 0.0}[severity]
 
     def _risk_summary(self, vulnerabilities: List[Dict]) -> Dict:
         counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Info": 0}
@@ -228,29 +231,28 @@ class ScanManager:
             counts[item["severity"]] += 1
 
         weighted = sum(SEVERITY_SCORE[k] * v for k, v in counts.items())
+        overall = "Info"
         if counts["Critical"] > 0:
             overall = "Critical"
-        elif weighted >= 8:
+        elif weighted >= 10:
             overall = "High"
-        elif weighted >= 4:
+        elif weighted >= 5:
             overall = "Medium"
         elif weighted > 0:
             overall = "Low"
-        else:
-            overall = "Info"
 
         return {"overall": overall, "counts": counts, "weighted_score": weighted}
 
     @staticmethod
     def _solution_list(vulnerabilities: List[Dict]) -> List[str]:
-        uniq = []
+        unique = []
         seen = set()
-        for v in vulnerabilities:
-            rec = v["recommendation"]
-            if rec not in seen:
-                seen.add(rec)
-                uniq.append(rec)
-        return uniq
+        for item in vulnerabilities:
+            recommendation = item["recommendation"]
+            if recommendation not in seen:
+                seen.add(recommendation)
+                unique.append(recommendation)
+        return unique
 
     def _emit(self, state: ScanState, event_type: str, message: str):
         payload = json.dumps(
@@ -274,7 +276,7 @@ class ScanManager:
 
         ip_obj = ipaddress.ip_address(ip)
         if not (ip_obj.is_private or ip_obj.is_loopback):
-            raise ValueError("For safety, this lab scanner only allows localhost/private IP targets.")
+            raise ValueError("Only localhost/private targets are allowed for lab safety.")
         return ip
 
     def _generate_html_report(self, scan_id: str, state: ScanState):
@@ -287,7 +289,12 @@ class ScanManager:
         if not vuln_rows:
             vuln_rows = "<tr><td colspan='5'>No vulnerabilities mapped.</td></tr>"
 
-        counts = result.get("risk_summary", {}).get("counts", {})
+        open_ports = result.get("open_ports", [])
+        open_list = "".join(f"<li>{p['port']}/tcp - {html.escape(p['service'])}</li>" for p in open_ports)
+        if not open_list:
+            open_list = "<li>No open ports found.</li>"
+
+        risk_counts = result.get("risk_summary", {}).get("counts", {})
         html_body = f"""
 <!doctype html>
 <html>
@@ -298,30 +305,27 @@ class ScanManager:
 body{{font-family:Arial,sans-serif;margin:32px;background:#f4f7fb;color:#1d2a44}}
 .card{{background:#fff;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 8px 24px rgba(0,0,0,.08)}}
 table{{width:100%;border-collapse:collapse}}th,td{{border:1px solid #d9e1f2;padding:8px;text-align:left}}
-th{{background:#ecf2ff}}
+th{{background:#ecf2ff}}pre{{white-space:pre-wrap;background:#0b1220;color:#d7e3ff;padding:12px;border-radius:8px}}
 </style>
 </head>
 <body>
 <h1>Vulnerability Assessment Report</h1>
 <div class='card'>
 <p><b>Target:</b> {html.escape(state.target)}</p>
-<p><b>Generated at:</b> {result.get('generated_at','')}</p>
+<p><b>Generated At:</b> {result.get('generated_at','')}</p>
+<p><b>Nmap Command:</b> {html.escape(result.get('nmap_command',''))}</p>
 <p><b>Overall Risk:</b> {result.get('risk_summary',{}).get('overall','Info')}</p>
-<p><b>Risk Counts:</b> Critical={counts.get('Critical',0)}, High={counts.get('High',0)}, Medium={counts.get('Medium',0)}, Low={counts.get('Low',0)}</p>
+<p><b>Counts:</b> Critical={risk_counts.get('Critical',0)}, High={risk_counts.get('High',0)}, Medium={risk_counts.get('Medium',0)}, Low={risk_counts.get('Low',0)}</p>
 </div>
+<div class='card'><h2>Open Ports</h2><ul>{open_list}</ul></div>
 <div class='card'>
-<h2>Open Ports</h2>
-<ul>
-{''.join(f"<li>{p['port']} - {html.escape(p['service'])}</li>" for p in result.get('open_ports', [])) or '<li>No open ports found in selected range.</li>'}
-</ul>
-</div>
-<div class='card'>
-<h2>Vulnerabilities & Recommendations</h2>
+<h2>Vulnerabilities & Fixes</h2>
 <table>
 <tr><th>Port</th><th>Service</th><th>Severity</th><th>Description</th><th>Recommendation</th></tr>
 {vuln_rows}
 </table>
 </div>
+<div class='card'><h2>Nmap Raw Output</h2><pre>{html.escape(result.get('nmap_raw_output',''))}</pre></div>
 </body>
 </html>
 """
