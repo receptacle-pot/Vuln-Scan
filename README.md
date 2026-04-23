@@ -11,6 +11,7 @@ A defensive lab scanner web app that performs:
 ## Requirements
 - Python 3.10+
 - Nmap installed and available on PATH (`nmap --version`)
+- Optional: set `NMAP_BINARY` to an absolute nmap executable path if PATH lookup fails
 
 ## Run
 
@@ -34,3 +35,13 @@ Set `N=1000` to match a typical default port sweep similar to `nmap <target>`.
 
 ## Safety
 This tool intentionally restricts targets to `localhost` and private RFC1918 IP space for legal/ethical defensive testing in lab environments.
+
+
+### Troubleshooting Nmap detection
+
+If UI shows `internal_socket_scan`, set the binary explicitly before starting Flask:
+
+```bash
+export NMAP_BINARY=/usr/bin/nmap
+python app.py
+```
