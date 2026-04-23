@@ -30,12 +30,17 @@ function renderSummary(result) {
     options: { plugins: { legend: { position: 'bottom' } } }
   });
 
+  const usingFallback = result.scan_engine === 'socket_fallback';
+  const commandText = usingFallback ? 'Nmap unavailable on server; socket fallback used' : result.nmap_command;
+  const warnings = (result.warnings || []).length ? (result.warnings || []).join(' | ') : 'None';
+  const errorHtml = result.error ? `<br><b>Error:</b> ${result.error}` : '';
+
   document.getElementById('summaryCards').innerHTML = `
     <div class="alert alert-dark"><b>Overall Risk:</b> ${result.risk_summary.overall}</div>
     <div class="alert alert-secondary"><b>Weighted Score:</b> ${result.risk_summary.weighted_score}</div>
     <div class="alert alert-info"><b>Hosts discovered:</b> ${result.hosts_discovered.length}</div>
-    <div class="alert alert-light"><b>Nmap Command:</b> <code>${result.nmap_command}</code></div>
-    <div class="alert alert-warning mb-0"><b>Warnings:</b> ${(result.warnings || []).join(' | ') || 'None'}<br><b>Error:</b> ${result.error || 'None'}</div>
+    <div class="alert ${usingFallback ? 'alert-warning' : 'alert-light'}"><b>Scan Engine:</b> ${usingFallback ? 'Socket Fallback' : 'Nmap'}<br><b>Command:</b> <code>${commandText}</code></div>
+    <div class="alert alert-light mb-0"><b>Warnings:</b> ${warnings}${errorHtml}</div>
   `;
 
   document.getElementById('nmapRaw').textContent = result.nmap_raw_output || '';
