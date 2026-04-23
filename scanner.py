@@ -135,6 +135,10 @@ class ScanManager:
             vulnerabilities = self._assess_vulnerabilities(nmap_result["open_ports"])
             risk_summary = self._risk_summary(vulnerabilities)
 
+            warnings = list(nmap_result.get("warnings", []))
+            if not nmap_result["open_ports"]:
+                warnings.append("No open ports were found. Target may be filtered, unreachable, or outside scanner network path.")
+
             state.result = {
                 "open_ports": nmap_result["open_ports"],
                 "hosts_discovered": hosts,
@@ -144,7 +148,7 @@ class ScanManager:
                 "nmap_command": nmap_result["command"],
                 "nmap_raw_output": nmap_result["raw_output"],
                 "scan_engine": nmap_result.get("engine", "nmap"),
-                "warnings": nmap_result.get("warnings", []),
+                "warnings": warnings,
                 "error": None,
                 "generated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
             }

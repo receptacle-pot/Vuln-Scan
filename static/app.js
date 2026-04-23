@@ -19,14 +19,14 @@ function renderSummary(result) {
   const counts = result.risk_summary.counts;
   const labels = ['Critical', 'High', 'Medium', 'Low'];
   const values = labels.map(k => counts[k]);
+  const totalFindings = values.reduce((a, b) => a + b, 0);
 
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById('riskChart'), {
     type: 'pie',
-    data: {
-      labels,
-      datasets: [{ data: values, backgroundColor: ['#d90429', '#f77f00', '#ffbe0b', '#3a86ff'] }]
-    },
+    data: totalFindings > 0
+      ? { labels, datasets: [{ data: values, backgroundColor: ['#d90429', '#f77f00', '#ffbe0b', '#3a86ff'] }] }
+      : { labels: ['No vulnerabilities mapped'], datasets: [{ data: [1], backgroundColor: ['#adb5bd'] }] },
     options: { plugins: { legend: { position: 'bottom' } } }
   });
 
@@ -47,6 +47,7 @@ function renderSummary(result) {
     <div class="alert alert-dark"><b>Overall Risk:</b> ${result.risk_summary.overall}</div>
     <div class="alert alert-secondary"><b>Weighted Score:</b> ${result.risk_summary.weighted_score}</div>
     <div class="alert alert-info"><b>Hosts discovered:</b> ${result.hosts_discovered.length}</div>
+    <div class="alert alert-primary"><b>Open ports found:</b> ${result.open_ports.length}</div>
     ${commandBlock}
     ${warningBlock}
     ${errorBlock}
@@ -56,6 +57,13 @@ function renderSummary(result) {
 
   const body = document.getElementById('vulnTableBody');
   body.innerHTML = '';
+  if (!result.vulnerabilities.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="5">No vulnerabilities mapped from current scan results. Target may be unreachable or no open ports were found.</td>';
+    body.appendChild(tr);
+    return;
+  }
+
   result.vulnerabilities.forEach(v => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${v.port}</td><td>${v.service}</td><td>${v.severity}</td><td>${v.cvss_estimate}</td><td>${v.recommendation}</td>`;
