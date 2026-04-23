@@ -18,7 +18,7 @@ def index():
 def create_scan():
     data = request.get_json(silent=True) or {}
     target = (data.get("target") or "").strip()
-    top_ports = int(data.get("top_ports", 1024))
+    top_ports = int(data.get("top_ports", 1000))
     if not target:
         return jsonify({"error": "Target is required."}), 400
 
