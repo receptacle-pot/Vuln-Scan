@@ -5,6 +5,7 @@ import queue
 import re
 import socket
 import subprocess
+import shutil
 import threading
 import time
 import uuid
@@ -118,12 +119,12 @@ class ScanManager:
 
     def _run_scan(self, scan_id: str):
         state = self.scans[scan_id]
+        state.status = "running"
         try:
-            state.status = "running"
             self._emit(state, "info", f"Running Nmap scan on {state.target} (top {state.top_ports} ports)")
             nmap_result = self._run_nmap_scan(state)
             state.progress = 78
-            self._emit(state, "info", f"Nmap found {len(nmap_result['open_ports'])} open ports.")
+            self._emit(state, "info", f"Scan found {len(nmap_result['open_ports'])} open ports.")
 
             self._emit(state, "info", "Running lightweight neighborhood discovery in /24 subnet...")
             hosts = self._network_discovery(state.target)
@@ -140,32 +141,63 @@ class ScanManager:
                 "solutions": self._solution_list(vulnerabilities),
                 "nmap_command": nmap_result["command"],
                 "nmap_raw_output": nmap_result["raw_output"],
+                "scan_engine": nmap_result.get("engine", "nmap"),
+                "warnings": nmap_result.get("warnings", []),
+                "error": None,
                 "generated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
             }
-            self._generate_html_report(scan_id, state)
             state.progress = 100
             state.status = "completed"
             state.completed_at = time.time()
             self._emit(state, "success", "Scan complete. Report generated.")
         except Exception as exc:
             state.status = "failed"
+            state.result = {
+                "open_ports": [],
+                "hosts_discovered": [],
+                "vulnerabilities": [],
+                "risk_summary": {"overall": "Info", "counts": {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Info": 0}, "weighted_score": 0},
+                "solutions": [],
+                "nmap_command": "",
+                "nmap_raw_output": "",
+                "scan_engine": "none",
+                "warnings": [],
+                "error": str(exc),
+                "generated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+            }
             self._emit(state, "error", f"Scan failed: {exc}")
+        finally:
+            self._generate_html_report(scan_id, state)
 
     def _run_nmap_scan(self, state: ScanState) -> Dict:
-        command = ["nmap", "-Pn", f"--top-ports", str(state.top_ports), state.target]
+        command = ["nmap", "-Pn", "--top-ports", str(state.top_ports), state.target]
+        if shutil.which("nmap") is None:
+            self._emit(state, "info", "Nmap not found. Falling back to internal TCP scan.")
+            fallback = self._socket_fallback_scan(state.target, state.top_ports, state)
+            return {
+                "open_ports": fallback,
+                "raw_output": "Nmap not installed. Used internal TCP socket scan fallback.",
+                "command": "internal_socket_scan",
+                "engine": "socket_fallback",
+                "warnings": ["Nmap binary was not available on server."],
+            }
+
         completed = subprocess.run(command, capture_output=True, text=True, timeout=180, check=False)
-        raw_output = completed.stdout.strip() or completed.stderr.strip()
+        raw_output = (completed.stdout or "").strip()
+        stderr = (completed.stderr or "").strip()
+
         if completed.returncode != 0:
-            raise RuntimeError(raw_output or "Nmap command failed.")
+            msg = stderr or raw_output or "Nmap command failed."
+            raise RuntimeError(msg)
 
         open_ports = []
         for line in raw_output.splitlines():
             line = line.strip()
-            match = re.match(r"^(\d+)/tcp\s+open\s+([\w\-\?]+)", line)
+            match = re.match(r"^(\d+)/tcp\s+open\s+(.+)$", line)
             if not match:
                 continue
             port = int(match.group(1))
-            service_raw = match.group(2)
+            service_raw = match.group(2).split()[0]
             service = COMMON_SERVICES.get(port, service_raw.upper())
             open_ports.append({"port": port, "service": service, "state": "open"})
             self._emit(state, "port", f"{port}/tcp open ({service_raw})")
@@ -175,7 +207,36 @@ class ScanManager:
             "open_ports": sorted(open_ports, key=lambda x: x["port"]),
             "raw_output": raw_output,
             "command": " ".join(command),
+            "engine": "nmap",
+            "warnings": [stderr] if stderr else [],
         }
+
+    def _socket_fallback_scan(self, target: str, top_ports: int, state: ScanState) -> List[Dict]:
+        open_ports = []
+        ports = range(1, top_ports + 1)
+        with ThreadPoolExecutor(max_workers=200) as executor:
+            futures = {executor.submit(self._probe_port, target, port): port for port in ports}
+            total = len(futures)
+            for i, fut in enumerate(as_completed(futures), start=1):
+                res = fut.result()
+                if res:
+                    open_ports.append(res)
+                    self._emit(state, "port", f"{res['port']}/tcp open (fallback)")
+                if i % 50 == 0 or i == total:
+                    state.progress = max(state.progress, int((i / total) * 70))
+        return sorted(open_ports, key=lambda x: x["port"])
+
+    @staticmethod
+    def _probe_port(target: str, port: int):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.2)
+        try:
+            if sock.connect_ex((target, port)) == 0:
+                service = COMMON_SERVICES.get(port, "UNKNOWN")
+                return {"port": port, "service": service, "state": "open"}
+        finally:
+            sock.close()
+        return None
 
     def _network_discovery(self, target_ip: str) -> List[str]:
         net = ipaddress.ip_network(f"{target_ip}/24", strict=False)
@@ -295,6 +356,7 @@ class ScanManager:
             open_list = "<li>No open ports found.</li>"
 
         risk_counts = result.get("risk_summary", {}).get("counts", {})
+        warnings_html = ''.join(f"<li>{html.escape(w)}</li>" for w in result.get('warnings', [])) or '<li>None</li>'
         html_body = f"""
 <!doctype html>
 <html>
@@ -315,6 +377,7 @@ th{{background:#ecf2ff}}pre{{white-space:pre-wrap;background:#0b1220;color:#d7e3
 <p><b>Generated At:</b> {result.get('generated_at','')}</p>
 <p><b>Nmap Command:</b> {html.escape(result.get('nmap_command',''))}</p>
 <p><b>Overall Risk:</b> {result.get('risk_summary',{}).get('overall','Info')}</p>
+<p><b>Engine:</b> {html.escape(result.get('scan_engine','nmap'))}</p>
 <p><b>Counts:</b> Critical={risk_counts.get('Critical',0)}, High={risk_counts.get('High',0)}, Medium={risk_counts.get('Medium',0)}, Low={risk_counts.get('Low',0)}</p>
 </div>
 <div class='card'><h2>Open Ports</h2><ul>{open_list}</ul></div>
@@ -325,6 +388,7 @@ th{{background:#ecf2ff}}pre{{white-space:pre-wrap;background:#0b1220;color:#d7e3
 {vuln_rows}
 </table>
 </div>
+<div class='card'><h2>Warnings</h2><ul>{warnings_html}</ul><p><b>Error:</b> {html.escape(result.get('error') or 'None')}</p></div>
 <div class='card'><h2>Nmap Raw Output</h2><pre>{html.escape(result.get('nmap_raw_output',''))}</pre></div>
 </body>
 </html>
