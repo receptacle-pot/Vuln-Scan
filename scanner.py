@@ -181,12 +181,10 @@ class ScanManager:
             fallback = self._socket_fallback_scan(state.target, state.top_ports, state)
             return {
                 "open_ports": fallback,
-                "raw_output": "Nmap binary not found. Used internal TCP socket scan fallback.",
-                "command": "internal_socket_scan",
+                "raw_output": "Nmap binary was unavailable, so socket-based fallback scanning was used.",
+                "command": "socket_fallback_scan",
                 "engine": "socket_fallback",
-                "warnings": [
-                    "Nmap binary was not available on server PATH. Install Nmap or set NMAP_BINARY env variable.",
-                ],
+                "warnings": [],
             }
 
         raw_output = (completed.stdout or "").strip()
