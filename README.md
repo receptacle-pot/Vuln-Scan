@@ -1,4 +1,5 @@
-# Zaalima Real-Time Vulnerability Scanner (Flask + Nmap)
+# Vuln-Scan
+# Real-Time Vulnerability Scanner (Flask + Nmap)
 
 A defensive lab scanner web app that performs:
 - Real-time **Nmap-driven** TCP port scanning for localhost/private targets
