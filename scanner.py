@@ -176,23 +176,31 @@ class ScanManager:
 
         try:
             completed = subprocess.run(command, capture_output=True, text=True, timeout=180, check=False)
-        except FileNotFoundError:
-            self._emit(state, "info", "Nmap binary not found at runtime. Falling back to internal TCP scan.")
+        except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired) as exc:
+            self._emit(state, "info", f"Nmap execution issue ({exc.__class__.__name__}). Falling back to internal TCP scan.")
             fallback = self._socket_fallback_scan(state.target, state.top_ports, state)
             return {
                 "open_ports": fallback,
-                "raw_output": "Nmap binary was unavailable, so socket-based fallback scanning was used.",
+                "raw_output": "Nmap was unavailable or failed to execute, so socket-based fallback scanning was used.",
                 "command": "socket_fallback_scan",
                 "engine": "socket_fallback",
-                "warnings": [],
+                "warnings": [f"Nmap execution issue: {exc.__class__.__name__}"],
             }
 
         raw_output = (completed.stdout or "").strip()
         stderr = (completed.stderr or "").strip()
 
         if completed.returncode != 0:
-            msg = stderr or raw_output or "Nmap command failed."
-            raise RuntimeError(msg)
+            self._emit(state, "info", "Nmap returned a non-zero status. Falling back to internal TCP scan.")
+            fallback = self._socket_fallback_scan(state.target, state.top_ports, state)
+            warning_text = stderr or raw_output or "Nmap returned non-zero exit status."
+            return {
+                "open_ports": fallback,
+                "raw_output": raw_output or warning_text,
+                "command": "socket_fallback_scan",
+                "engine": "socket_fallback",
+                "warnings": [warning_text],
+            }
 
         open_ports = []
         for line in raw_output.splitlines():
@@ -381,7 +389,11 @@ class ScanManager:
             open_list = "<li>No open ports found.</li>"
 
         risk_counts = result.get("risk_summary", {}).get("counts", {})
-        warnings_html = ''.join(f"<li>{html.escape(w)}</li>" for w in result.get('warnings', [])) or '<li>None</li>'
+        warnings = result.get('warnings', [])
+        warnings_html = ''.join(f"<li>{html.escape(w)}</li>" for w in warnings)
+        error_text = result.get('error')
+        warning_section = f"<div class='card'><h2>Warnings</h2><ul>{warnings_html}</ul></div>" if warnings_html else ""
+        error_section = f"<div class='card'><h2>Error</h2><p>{html.escape(error_text)}</p></div>" if error_text else ""
         html_body = f"""
 <!doctype html>
 <html>
@@ -413,7 +425,8 @@ th{{background:#ecf2ff}}pre{{white-space:pre-wrap;background:#0b1220;color:#d7e3
 {vuln_rows}
 </table>
 </div>
-<div class='card'><h2>Warnings</h2><ul>{warnings_html}</ul><p><b>Error:</b> {html.escape(result.get('error') or 'None')}</p></div>
+{warning_section}
+{error_section}
 <div class='card'><h2>Nmap Raw Output</h2><pre>{html.escape(result.get('nmap_raw_output',''))}</pre></div>
 </body>
 </html>
