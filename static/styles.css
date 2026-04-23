@@ -1,0 +1,31 @@
+:root {
+  --bg1: #0d1b2a;
+  --bg2: #1b263b;
+  --accent: #4cc9f0;
+}
+body {
+  background: linear-gradient(135deg, #f6fbff, #edf2ff);
+}
+.hero {
+  background: linear-gradient(120deg, var(--bg1), var(--bg2));
+  box-shadow: 0 18px 44px rgba(13, 27, 42, 0.35);
+}
+.panel {
+  border: 0;
+  border-radius: 16px;
+}
+.log-box {
+  height: 260px;
+  overflow-y: auto;
+  background: #0b1220;
+  color: #d7e3ff;
+  border-radius: 12px;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+.log-line { margin-bottom: 6px; }
+.log-line.info { color: #9ec5fe; }
+.log-line.error { color: #ff8fa3; }
+.log-line.success { color: #8ce99a; }
+.log-line.port { color: #ffd166; }
