@@ -34,7 +34,8 @@ function renderSummary(result) {
     <div class="alert alert-dark"><b>Overall Risk:</b> ${result.risk_summary.overall}</div>
     <div class="alert alert-secondary"><b>Weighted Score:</b> ${result.risk_summary.weighted_score}</div>
     <div class="alert alert-info"><b>Hosts discovered:</b> ${result.hosts_discovered.length}</div>
-    <div class="alert alert-light mb-0"><b>Nmap Command:</b> <code>${result.nmap_command}</code></div>
+    <div class="alert alert-light"><b>Nmap Command:</b> <code>${result.nmap_command}</code></div>
+    <div class="alert alert-warning mb-0"><b>Warnings:</b> ${(result.warnings || []).join(' | ') || 'None'}<br><b>Error:</b> ${result.error || 'None'}</div>
   `;
 
   document.getElementById('nmapRaw').textContent = result.nmap_raw_output || '';
@@ -51,6 +52,9 @@ function renderSummary(result) {
 async function getResult(resultUrl) {
   const res = await fetch(resultUrl);
   const payload = await res.json();
+  if (!res.ok) {
+    throw new Error(payload.error || 'Failed to fetch scan result');
+  }
   return payload.result;
 }
 
@@ -81,12 +85,20 @@ document.getElementById('scanBtn').addEventListener('click', async () => {
     const data = JSON.parse(event.data);
     if (data.type === 'complete') {
       evt.close();
-      const result = await getResult(payload.result_url);
+      let result = null;
+      try {
+        result = await getResult(payload.result_url);
+      } catch (err) {
+        appendLog('error', err.message, new Date().toLocaleTimeString());
+      }
       if (result) {
         renderSummary(result);
         const reportLink = document.getElementById('reportLink');
         reportLink.href = `/reports/${payload.scan_id}`;
         reportLink.classList.remove('disabled');
+      }
+      if (data.status === 'failed') {
+        appendLog('error', 'Scan finished with errors. Check report details.', new Date().toLocaleTimeString());
       }
       setProgress(100);
       return;
