@@ -1,6 +1,7 @@
 import html
 import ipaddress
 import json
+import os
 import queue
 import re
 import socket
@@ -74,6 +75,7 @@ class ScanManager:
     def __init__(self, reports_dir: Path):
         self.reports_dir = reports_dir
         self.scans: Dict[str, ScanState] = {}
+        self.nmap_binary = self._resolve_nmap_binary()
 
     def create_scan(self, target: str, top_ports: int = 1000) -> str:
         target_ip = self._validate_and_resolve_target(target)
@@ -170,19 +172,23 @@ class ScanManager:
             self._generate_html_report(scan_id, state)
 
     def _run_nmap_scan(self, state: ScanState) -> Dict:
-        command = ["nmap", "-Pn", "--top-ports", str(state.top_ports), state.target]
-        if shutil.which("nmap") is None:
-            self._emit(state, "info", "Nmap not found. Falling back to internal TCP scan.")
+        command = [self.nmap_binary, "-Pn", "--top-ports", str(state.top_ports), state.target]
+
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=180, check=False)
+        except FileNotFoundError:
+            self._emit(state, "info", "Nmap binary not found at runtime. Falling back to internal TCP scan.")
             fallback = self._socket_fallback_scan(state.target, state.top_ports, state)
             return {
                 "open_ports": fallback,
-                "raw_output": "Nmap not installed. Used internal TCP socket scan fallback.",
+                "raw_output": "Nmap binary not found. Used internal TCP socket scan fallback.",
                 "command": "internal_socket_scan",
                 "engine": "socket_fallback",
-                "warnings": ["Nmap binary was not available on server."],
+                "warnings": [
+                    "Nmap binary was not available on server PATH. Install Nmap or set NMAP_BINARY env variable.",
+                ],
             }
 
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=180, check=False)
         raw_output = (completed.stdout or "").strip()
         stderr = (completed.stderr or "").strip()
 
@@ -210,6 +216,27 @@ class ScanManager:
             "engine": "nmap",
             "warnings": [stderr] if stderr else [],
         }
+
+    def _resolve_nmap_binary(self) -> str:
+        env_bin = (os.getenv("NMAP_BINARY") or "").strip()
+        if env_bin:
+            return env_bin
+
+        system_nmap = shutil.which("nmap")
+        if system_nmap:
+            return system_nmap
+
+        common_paths = [
+            "/usr/bin/nmap",
+            "/usr/local/bin/nmap",
+            r"C:\Program Files\Nmap\nmap.exe",
+            r"C:\Program Files (x86)\Nmap\nmap.exe",
+        ]
+        for candidate in common_paths:
+            if Path(candidate).exists():
+                return candidate
+
+        return "nmap"
 
     def _socket_fallback_scan(self, target: str, top_ports: int, state: ScanState) -> List[Dict]:
         open_ports = []
